@@ -28,26 +28,13 @@ using namespace Hyprutils::String;
 #include "scrollOverview.hpp"
 #include "OverviewGesture.hpp"
 #include "OverviewOpen.hpp"
+#include "OverviewRender.hpp"
 
 // Methods
-static CFunctionHook* g_pScrollRenderWorkspaceHook = nullptr;
-static CFunctionHook* g_pScrollAddDamageHookA      = nullptr;
-static CFunctionHook* g_pScrollAddDamageHookB      = nullptr;
-static CFunctionHook* g_pScrollDamageSurfaceHook   = nullptr;
-static CFunctionHook* g_pScrollScheduleFrameHook   = nullptr;
-static CFunctionHook* g_pScrollSendFrameEventsHook = nullptr;
-static CFunctionHook* g_pScrollSurfaceFrameHook    = nullptr;
+// Only the optional native-drag hook uses Hyprland's function hooks, which are x86_64-only.
+// Everything else goes through the event bus so the plugin also works on aarch64.
 static CFunctionHook* g_pScrollMoveMouseHook       = nullptr;
-static CFunctionHook* g_pScrollChangeWorkspaceHook = nullptr;
-typedef void (*origRenderWorkspace)(void*, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp&, const CBox&);
-typedef void (*origAddDamageA)(void*, const CBox&);
-typedef void (*origAddDamageB)(void*, const pixman_region32_t*);
-typedef void (*origDamageSurface)(void*, SP<CWLSurfaceResource>, double, double, double);
-typedef void (*origScheduleFrame)(void*, Aquamarine::IOutput::scheduleFrameReason);
-typedef void (*origSendFrameEventsToWorkspace)(void*, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp&);
-typedef void (*origSurfaceFrame)(void*, const Time::steady_tp&);
 typedef void (*origMoveMouse)(void*, const Vector2D&);
-using origChangeWorkspace = Config::Actions::ActionResult (*)(PHLWORKSPACE);
 
 static bool g_unloading = false;
 
@@ -65,39 +52,30 @@ static bool                g_scrollMoveMouseHookUnavailable = false;
 static bool                g_scrollMoveMouseHookWarned      = false;
 static CHyprSignalListener g_configReloadHook;
 static CHyprSignalListener g_nativeDragMouseMoveHook;
+static CHyprSignalListener g_renderPreChecksListener;
+static CHyprSignalListener g_renderPreListener;
+static CHyprSignalListener g_renderStageListener;
+static CHyprSignalListener g_workspaceActiveListener;
 
 static void failNotif(const std::string& reason);
 static void warnNativeDragUnavailable();
 static void disableNativeDragHook();
 static void reconcileNativeDragHook();
 
-static Config::Actions::ActionResult hkChangeWorkspace(PHLWORKSPACE workspace) {
-    if (workspace && !g_unloading) {
-        const auto overviews = scrollOverviews();
-        for (const auto& overview : overviews)
-            removeOverview(overview.get());
-    }
+// A workspace switch instantly finishes overviews that are still animating closed,
+// so the workspace animation can play correctly.
+static void onWorkspaceActive(PHLWORKSPACE workspace) {
+    if (!workspace || g_unloading)
+        return;
 
-    return rc<origChangeWorkspace>(g_pScrollChangeWorkspaceHook->m_original)(workspace);
+    const auto overviews = scrollOverviews();
+    for (const auto& overview : overviews)
+        removeOverview(overview.get());
 }
 
 bool ensureScrollOverviewHooks() {
     if (g_scrollOverviewHooksActive)
         return true;
-
-    bool success = g_pScrollRenderWorkspaceHook->hook();
-    success      = success && g_pScrollScheduleFrameHook->hook();
-    success      = success && g_pScrollDamageSurfaceHook->hook();
-    success      = success && g_pScrollSendFrameEventsHook->hook();
-    success      = success && g_pScrollSurfaceFrameHook->hook();
-    success      = success && g_pScrollAddDamageHookA->hook();
-    success      = success && g_pScrollAddDamageHookB->hook();
-
-    if (!success) {
-        disableScrollOverviewHooks();
-        failNotif("Failed enabling overview hooks (is other overview plugin enabled?)");
-        return false;
-    }
 
     g_scrollOverviewHooksActive = true;
     reconcileNativeDragHook();
@@ -106,21 +84,6 @@ bool ensureScrollOverviewHooks() {
 
 void disableScrollOverviewHooks() {
     disableNativeDragHook();
-    if (g_pScrollAddDamageHookB)
-        g_pScrollAddDamageHookB->unhook();
-    if (g_pScrollAddDamageHookA)
-        g_pScrollAddDamageHookA->unhook();
-    if (g_pScrollSurfaceFrameHook)
-        g_pScrollSurfaceFrameHook->unhook();
-    if (g_pScrollSendFrameEventsHook)
-        g_pScrollSendFrameEventsHook->unhook();
-    if (g_pScrollDamageSurfaceHook)
-        g_pScrollDamageSurfaceHook->unhook();
-    if (g_pScrollScheduleFrameHook)
-        g_pScrollScheduleFrameHook->unhook();
-    if (g_pScrollRenderWorkspaceHook)
-        g_pScrollRenderWorkspaceHook->unhook();
-
     g_scrollOverviewHooksActive = false;
 }
 
@@ -138,101 +101,28 @@ static void hkMoveMouse(void* thisptr, const Vector2D& mousePos) {
     }
 }
 
-static void hkScheduleFrame(void* thisptr, Aquamarine::IOutput::scheduleFrameReason reason) {
-    const auto OVERVIEW = scrollOverviewForMonitor(sc<Monitor::CMonitor*>(thisptr)->m_self.lock());
-    if (OVERVIEW) {
-        using enum Aquamarine::IOutput::scheduleFrameReason;
-
-        const bool THROTTLEDREASON =
-            reason == AQ_SCHEDULE_UNKNOWN || reason == AQ_SCHEDULE_CLIENT_UNKNOWN || reason == AQ_SCHEDULE_NEEDS_FRAME || reason == AQ_SCHEDULE_RENDER_MONITOR ||
-            reason == AQ_SCHEDULE_DAMAGE;
-
-        if (THROTTLEDREASON && !OVERVIEW->blockDamageReporting && !OVERVIEW->shouldAllowRealtimePreviewSchedule())
-            return;
-    }
-
-    rc<origScheduleFrame>(g_pScrollScheduleFrameHook->m_original)(thisptr, reason);
-}
-
-//
-static void hkRenderWorkspace(void* thisptr, PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& now, const CBox& geometry) {
-    const auto OVERVIEW = scrollOverviewForMonitor(pMonitor);
-    if (!OVERVIEW || renderingOverview)
-        rc<origRenderWorkspace>(g_pScrollRenderWorkspaceHook->m_original)(thisptr, pMonitor, pWorkspace, now, geometry);
-    else {
-        const bool PREVRENDERINGOVERVIEW = renderingOverview;
-        const auto PREVRENDERINGMONITOR  = renderingOverviewMonitor;
-        const auto PREVOVERVIEW          = g_pScrollOverview;
-        renderingOverview                = true;
-        renderingOverviewMonitor         = pMonitor;
-        g_pScrollOverview                = OVERVIEW;
-        OVERVIEW->render();
-        g_pScrollOverview = PREVOVERVIEW;
-        renderingOverviewMonitor = PREVRENDERINGMONITOR;
-        renderingOverview = PREVRENDERINGOVERVIEW;
-    }
-}
-
-static void hkDamageSurface(void* thisptr, SP<CWLSurfaceResource> surface, double x, double y, double scale) {
-    const bool HANDLED = scrollOverviews().empty() ||
-        std::ranges::any_of(scrollOverviews(), [](const auto& overview) { return overview && overview->blockDamageReporting; }) ||
-        std::ranges::all_of(scrollOverviews(), [&surface](const auto& overview) { return !overview || overview->shouldHandleSurfaceDamage(surface); });
-    if (HANDLED) {
-        const bool PREVDAMAGEFROMSURFACE = damageFromSurface;
-        damageFromSurface                = !scrollOverviews().empty();
-        rc<origDamageSurface>(g_pScrollDamageSurfaceHook->m_original)(thisptr, surface, x, y, scale);
-        damageFromSurface = PREVDAMAGEFROMSURFACE;
-    }
-}
-
-static void hkSendFrameEventsToWorkspace(void* thisptr, PHLMONITOR monitor, PHLWORKSPACE workspace, const Time::steady_tp& now) {
-    if (scrollOverviewForMonitor(monitor))
+// Hyprland has already queued the regular workspace by RENDER_LAST_MOMENT. Drop it: the
+// overview draws parts of its backdrop immediately, so a queued scene would land on top.
+static void onRenderStage(eRenderStage stage) {
+    if (stage != RENDER_LAST_MOMENT || renderingOverview || g_unloading || !g_scrollOverviewHooksActive)
         return;
 
-    rc<origSendFrameEventsToWorkspace>(g_pScrollSendFrameEventsHook->m_original)(thisptr, monitor, workspace, now);
-}
-
-static void hkSurfaceFrame(void* thisptr, const Time::steady_tp& now) {
-    const auto SURFACE = sc<CWLSurfaceResource*>(thisptr)->m_self.lock();
-
-    if (std::ranges::any_of(scrollOverviews(), [&SURFACE, &now](const auto& overview) { return overview && !overview->shouldAllowSurfaceFrame(SURFACE, now); }))
+    const auto MONITOR  = g_pHyprRenderer->m_renderData.pMonitor.lock();
+    const auto OVERVIEW = scrollOverviewForMonitor(MONITOR);
+    if (!OVERVIEW)
         return;
 
-    rc<origSurfaceFrame>(g_pScrollSurfaceFrameHook->m_original)(thisptr, now);
-}
-
-static void hkAddDamageA(void* thisptr, const CBox& box) {
-    const auto PMONITOR = sc<Monitor::CMonitor*>( thisptr );
-    const auto OVERVIEW = scrollOverviewForMonitor(PMONITOR->m_self.lock());
-
-    if (OVERVIEW && renderingOverviewMonitor.lock() == PMONITOR->m_self.lock() && !damageFromSurface && OVERVIEW->shouldSuppressRenderDamage()) {
-        return;
-    }
-
-    if (!OVERVIEW || OVERVIEW->blockDamageReporting || damageFromSurface) {
-        rc<origAddDamageA>(g_pScrollAddDamageHookA->m_original)(thisptr, box);
-        return;
-    }
-
-    OVERVIEW->onDamageReported();
-    rc<origAddDamageA>(g_pScrollAddDamageHookA->m_original)(thisptr, box);
-}
-
-static void hkAddDamageB(void* thisptr, const pixman_region32_t* rg) {
-    const auto PMONITOR = sc<Monitor::CMonitor*>(thisptr);
-    const auto OVERVIEW = scrollOverviewForMonitor(PMONITOR->m_self.lock());
-
-    if (OVERVIEW && renderingOverviewMonitor.lock() == PMONITOR->m_self.lock() && !damageFromSurface && OVERVIEW->shouldSuppressRenderDamage()) {
-        return;
-    }
-
-    if (!OVERVIEW || OVERVIEW->blockDamageReporting || damageFromSurface) {
-        rc<origAddDamageB>(g_pScrollAddDamageHookB->m_original)(thisptr, rg);
-        return;
-    }
-
-    OVERVIEW->onDamageReported();
-    rc<origAddDamageB>(g_pScrollAddDamageHookB->m_original)(thisptr, rg);
+    const auto PREVRENDERINGMONITOR = renderingOverviewMonitor;
+    const auto PREVOVERVIEW         = g_pScrollOverview;
+    renderingOverview               = true;
+    renderingOverviewMonitor        = MONITOR;
+    g_pScrollOverview               = OVERVIEW;
+    g_pHyprRenderer->m_renderPass.clear();
+    OVERVIEW->render();
+    OverviewRender::flushPass(MONITOR);
+    g_pScrollOverview        = PREVOVERVIEW;
+    renderingOverviewMonitor = PREVRENDERINGMONITOR;
+    renderingOverview        = false;
 }
 
 static std::pair<std::string, std::string> splitOverviewArg(const std::string& arg) {
@@ -486,41 +376,6 @@ static void reconcileNativeDragHook() {
     warnNativeDragUnavailable();
 }
 
-// Helper function to find a function by name and ensure it contains one of the requested substrings in its demangled name (to disambiguate overloads).
-static void* findFnOrThrow(const std::string& name, std::initializer_list<std::string_view> demangledNeedles) {
-    auto fns = HyprlandAPI::findFunctionsByName(SCROLLOVERVIEW_HANDLE, name);
-    if (fns.empty()) {
-        failNotif(std::format("no fns for hook {}", name));
-        throw std::runtime_error(std::format("[scrolloverview] No fns for hook {}", name));
-    }
-
-    if (demangledNeedles.size() == 0 || (demangledNeedles.size() == 1 && demangledNeedles.begin()->empty()))
-        return fns[0].address;
-
-    std::vector<SFunctionMatch> matches;
-    matches.reserve(fns.size());
-    for (const auto& fn : fns) {
-        for (const auto& needle : demangledNeedles) {
-            if (needle.empty() || fn.demangled.find(needle) != std::string::npos) {
-                matches.push_back(fn);
-                break;
-            }
-        }
-    }
-
-    if (matches.empty()) {
-        failNotif(std::format("no matching overload for hook {}", name));
-        throw std::runtime_error(std::format("[scrolloverview] No matching overload for hook {}", name));
-    }
-
-    if (matches.size() > 1) {
-        failNotif(std::format("ambiguous overload for hook {} ({} matches)", name, matches.size()));
-        throw std::runtime_error(std::format("[scrolloverview] Ambiguous overload for hook {}", name));
-    }
-
-    return matches[0].address;
-}
-
 // shared core: register / unregister the overview trackpad gesture. used by both the hyprlang
 // keyword and the Lua `scrolloverview.gesture` function so both configure the same gesture system.
 static std::expected<void, std::string> applyOverviewGesture(size_t fingerCount, eTrackpadGestureDirection direction, const std::string& action, uint32_t modMask,
@@ -634,56 +489,22 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         throw std::runtime_error("[he] Version mismatch");
     }
 
-    g_pScrollRenderWorkspaceHook = HyprlandAPI::createFunctionHook(
-        SCROLLOVERVIEW_HANDLE,
-        findFnOrThrow("renderWorkspace", {"CHyprRenderer::renderWorkspace(", "IHyprRenderer::renderWorkspace("}),
-        rc<void*>(hkRenderWorkspace));
-
-    g_pScrollScheduleFrameHook = HyprlandAPI::createFunctionHook(
-        SCROLLOVERVIEW_HANDLE, 
-        findFnOrThrow("_ZN7Monitor8CMonitor13scheduleFrameEN10Aquamarine7IOutput19scheduleFrameReasonE", {""}),
-        rc<void*>(hkScheduleFrame));
-
-    g_pScrollDamageSurfaceHook = HyprlandAPI::createFunctionHook(
-        SCROLLOVERVIEW_HANDLE,
-        findFnOrThrow("damageSurface", {"CHyprRenderer::damageSurface(", "IHyprRenderer::damageSurface("}),
-        rc<void*>(hkDamageSurface));
-
-    g_pScrollSendFrameEventsHook = HyprlandAPI::createFunctionHook(
-        SCROLLOVERVIEW_HANDLE,
-        findFnOrThrow("sendFrameEventsToWorkspace", {"CHyprRenderer::sendFrameEventsToWorkspace(", "IHyprRenderer::sendFrameEventsToWorkspace("}),
-        rc<void*>(hkSendFrameEventsToWorkspace));
-
-    g_pScrollSurfaceFrameHook = HyprlandAPI::createFunctionHook(
-        SCROLLOVERVIEW_HANDLE,
-        findFnOrThrow("_ZN18CWLSurfaceResource5frameERKNSt6chrono10time_pointINS0_3_V212steady_clockENS0_8durationIlSt5ratioILl1ELl1000000000EEEEEE", {""}),
-        rc<void*>(hkSurfaceFrame));
-
-    g_pScrollAddDamageHookB = HyprlandAPI::createFunctionHook(
-        SCROLLOVERVIEW_HANDLE,
-        findFnOrThrow("addDamageEPK15pixman_region32", {"CMonitor::addDamage"}),
-        rc<void*>(hkAddDamageB));
-
-    g_pScrollAddDamageHookA = HyprlandAPI::createFunctionHook(
-        SCROLLOVERVIEW_HANDLE,
-        findFnOrThrow("_ZN7Monitor8CMonitor9addDamageERKN9Hyprutils4Math4CBoxE", {""}),
-        rc<void*>(hkAddDamageA));
-
-    // Keep this hook until plugin unload: finishing the last overview disables the
-    // rendering hooks inside hkChangeWorkspace, which still needs its original function.
-    g_pScrollChangeWorkspaceHook = HyprlandAPI::createFunctionHook(
-        SCROLLOVERVIEW_HANDLE,
-        findFnOrThrow("changeWorkspace", {"Config::Actions::changeWorkspace(Hyprutils::Memory::CSharedPointer<CWorkspace>"}),
-        rc<void*>(hkChangeWorkspace));
-    if (!g_pScrollChangeWorkspaceHook || !g_pScrollChangeWorkspaceHook->hook()) {
-        failNotif("Failed enabling workspace change hook");
-        throw std::runtime_error("[scrolloverview] Failed enabling workspace change hook");
-    }
-
-    static auto P = Event::bus()->m_events.render.pre.listen([](PHLMONITOR monitor) {
-        if (const auto overview = scrollOverviewForMonitor(monitor))
-            overview->onPreRender();
+    // Without the damage hooks, surface damage only covers the window's real position.
+    // Redraw the whole monitor so live previews and the overview stay consistent.
+    g_renderPreChecksListener = Event::bus()->m_events.render.preChecks.listen([](PHLMONITOR monitor) {
+        if (scrollOverviewForMonitor(monitor))
+            monitor->m_solitaryClient.reset();
     });
+
+    g_renderPreListener = Event::bus()->m_events.render.pre.listen([](PHLMONITOR monitor) {
+        if (const auto overview = scrollOverviewForMonitor(monitor)) {
+            overview->onPreRender();
+            monitor->m_forceFullFrames = std::max(monitor->m_forceFullFrames, 1);
+        }
+    });
+
+    g_renderStageListener     = Event::bus()->m_events.render.stage.listen(::onRenderStage);
+    g_workspaceActiveListener = Event::bus()->m_events.workspace.active.listen(::onWorkspaceActive);
 
     g_configReloadHook = Event::bus()->m_events.config.reloaded.listen([] { reconcileNativeDragHook(); });
 
@@ -714,8 +535,10 @@ APICALL EXPORT void PLUGIN_EXIT() {
     g_unloading = true;
     g_nativeDragMouseMoveHook.reset();
     g_configReloadHook.reset();
-    if (g_pScrollChangeWorkspaceHook)
-        g_pScrollChangeWorkspaceHook->unhook();
+    g_workspaceActiveListener.reset();
+    g_renderStageListener.reset();
+    g_renderPreListener.reset();
+    g_renderPreChecksListener.reset();
     clearScrollOverviews();
     disableScrollOverviewHooks();
 

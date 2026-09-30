@@ -1752,29 +1752,33 @@ void CScrollOverview::updateBackdropBlurCache(PHLMONITOR monitor, int wallpaperM
         OverviewRender::flushPass(monitor);
     }
 
-    auto blurDamage = fullDamage;
-    const auto BLURREDTEX = g_pHyprRenderer->blurFramebuffer(backdropBlurFB, 1.F, &blurDamage);
-    if (!BLURREDTEX || !BLURREDTEX->m_size.x || !BLURREDTEX->m_size.y)
-        return;
+    // Each pass blurs the previous result again, so the cached backdrop gets progressively softer.
+    const int BLURPASSES = ScrollOverview::Config::getBlurPasses(pMonitor.lock());
+    for (int pass = 0; pass < BLURPASSES; ++pass) {
+        auto blurDamage = fullDamage;
+        const auto BLURREDTEX = g_pHyprRenderer->blurFramebuffer(backdropBlurFB, 1.F, &blurDamage);
+        if (!BLURREDTEX || !BLURREDTEX->m_size.x || !BLURREDTEX->m_size.y)
+            return;
 
-    {
-        auto bindBackdrop = g_pHyprRenderer->bindTempFB(backdropBlurFB);
-        g_pHyprRenderer->draw(CClearPassElement::SClearData{CHyprColor{0.F, 0.F, 0.F, 0.F}}, fullDamage);
+        {
+            auto bindBackdrop = g_pHyprRenderer->bindTempFB(backdropBlurFB);
+            g_pHyprRenderer->draw(CClearPassElement::SClearData{CHyprColor{0.F, 0.F, 0.F, 0.F}}, fullDamage);
 
-        const auto SAVEDTRANSFORM = BLURREDTEX->m_transform;
-        BLURREDTEX->m_transform   = Math::wlTransformToHyprutils(Math::invertTransform(monitor->m_transform));
-        auto restoreTransform     = Hyprutils::Utils::CScopeGuard([BLURREDTEX, SAVEDTRANSFORM] { BLURREDTEX->m_transform = SAVEDTRANSFORM; });
+            const auto SAVEDTRANSFORM = BLURREDTEX->m_transform;
+            BLURREDTEX->m_transform   = Math::wlTransformToHyprutils(Math::invertTransform(monitor->m_transform));
+            auto restoreTransform     = Hyprutils::Utils::CScopeGuard([BLURREDTEX, SAVEDTRANSFORM] { BLURREDTEX->m_transform = SAVEDTRANSFORM; });
 
-        g_pHyprRenderer->pushMonitorTransformEnabled(true);
-        auto restoreMonitorTransform = Hyprutils::Utils::CScopeGuard([] { g_pHyprRenderer->popMonitorTransformEnabled(); });
+            g_pHyprRenderer->pushMonitorTransformEnabled(true);
+            auto restoreMonitorTransform = Hyprutils::Utils::CScopeGuard([] { g_pHyprRenderer->popMonitorTransformEnabled(); });
 
-        g_pHyprRenderer->draw(
-            CTexPassElement::SRenderData{
-                .tex    = BLURREDTEX,
-                .box    = CBox{0, 0, RENDERSIZE.x, RENDERSIZE.y},
-                .damage = fullDamage,
-            },
-            fullDamage);
+            g_pHyprRenderer->draw(
+                CTexPassElement::SRenderData{
+                    .tex    = BLURREDTEX,
+                    .box    = CBox{0, 0, RENDERSIZE.x, RENDERSIZE.y},
+                    .damage = fullDamage,
+                },
+                fullDamage);
+        }
     }
 
     backdropBlurDirty = false;

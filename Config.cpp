@@ -420,6 +420,7 @@ static void defineConfigValues() {
                                    SIntValueOptions{.min = 0}));
     addValue(makeShared<CIntValue>("plugin:scrolloverview:wallpaper", "wallpaper mode", 0, SIntValueOptions{.min = 0, .max = 2}));
     addValue(makeShared<CBoolValue>("plugin:scrolloverview:blur", "blur the overview wallpaper", false));
+    addValue(makeShared<CIntValue>("plugin:scrolloverview:blur_passes", "times the overview wallpaper blur is applied", 1, SIntValueOptions{.min = 1, .max = 10}));
     addValue(makeShared<CBoolValue>("plugin:scrolloverview:shadow:enabled", "draw a shadow around each workspace card", false));
     addValue(makeShared<CIntValue>("plugin:scrolloverview:shadow:range", "workspace card shadow range", -1));
     addValue(makeShared<CIntValue>("plugin:scrolloverview:shadow:render_power", "workspace card shadow render power", -1));
@@ -518,6 +519,10 @@ int getWallpaperMode(PHLMONITOR monitor) {
 
 bool getBlur(PHLMONITOR monitor) {
     return getValue<bool>("plugin:scrolloverview:blur", monitor);
+}
+
+int getBlurPasses(PHLMONITOR monitor) {
+    return std::clamp<int>(getValue<int>("plugin:scrolloverview:blur_passes", monitor), 1, 10);
 }
 
 ::Config::CCssGapData getCssGapData(const std::string& name) {

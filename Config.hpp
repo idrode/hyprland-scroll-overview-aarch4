@@ -111,6 +111,7 @@ EScrollAction getVerticalScrollAction(ELayout layout, PHLMONITOR monitor);
 EScrollAction getHorizontalScrollAction(ELayout layout, PHLMONITOR monitor);
 int           getWallpaperMode(PHLMONITOR monitor);
 bool          getBlur(PHLMONITOR monitor);
+int           getBlurPasses(PHLMONITOR monitor);
 ::Config::CCssGapData getCssGapData(const std::string& name);
 int          getShadowEnabled(PHLMONITOR monitor);
 int          getShadowRange(PHLMONITOR monitor);
