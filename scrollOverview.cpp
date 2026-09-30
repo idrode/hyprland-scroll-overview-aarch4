@@ -1835,27 +1835,31 @@ void CScrollOverview::updateBackdropBlurCache(PHLMONITOR monitor, int wallpaperM
         OverviewRender::flushPass(cacheContext, monitor);
     }
 
-    auto         blurDamage = fullDamage;
-    SP<Render::ITexture> BLURREDTEX;
-    {
-        auto bindBackdrop = g_pHyprRenderer->bindTempFB(cacheContext, backdropBlurFB);
-        const auto blurredFB = g_pHyprRenderer->blurMainFramebuffer(cacheContext, 1.F, blurDamage);
-        BLURREDTEX = blurredFB ? blurredFB->getTexture() : nullptr;
-    }
-    if (!BLURREDTEX || !BLURREDTEX->m_size.x || !BLURREDTEX->m_size.y)
-        return;
+    // Each pass blurs the previous result again, so the cached backdrop gets progressively softer.
+    const int BLURPASSES = ScrollOverview::Config::getBlurPasses(pMonitor.lock());
+    for (int pass = 0; pass < BLURPASSES; ++pass) {
+        auto                 blurDamage = fullDamage;
+        SP<Render::ITexture> BLURREDTEX;
+        {
+            auto       bindBackdrop = g_pHyprRenderer->bindTempFB(cacheContext, backdropBlurFB);
+            const auto blurredFB    = g_pHyprRenderer->blurMainFramebuffer(cacheContext, 1.F, blurDamage);
+            BLURREDTEX              = blurredFB ? blurredFB->getTexture() : nullptr;
+        }
+        if (!BLURREDTEX || !BLURREDTEX->m_size.x || !BLURREDTEX->m_size.y)
+            return;
 
-    {
-        auto bindBackdrop = g_pHyprRenderer->bindTempFB(cacheContext, backdropBlurFB);
-        g_pHyprRenderer->draw(cacheContext, CClearPassElement::SClearData{CHyprColor{0.F, 0.F, 0.F, 0.F}}, fullDamage);
+        {
+            auto bindBackdrop = g_pHyprRenderer->bindTempFB(cacheContext, backdropBlurFB);
+            g_pHyprRenderer->draw(cacheContext, CClearPassElement::SClearData{CHyprColor{0.F, 0.F, 0.F, 0.F}}, fullDamage);
 
-        g_pHyprRenderer->draw(cacheContext,
-            CTexPassElement::SRenderData{
-                .tex    = BLURREDTEX,
-                .box    = CBox{0, 0, RENDERSIZE.x, RENDERSIZE.y},
-                .damage = fullDamage,
-            },
-            fullDamage);
+            g_pHyprRenderer->draw(cacheContext,
+                CTexPassElement::SRenderData{
+                    .tex    = BLURREDTEX,
+                    .box    = CBox{0, 0, RENDERSIZE.x, RENDERSIZE.y},
+                    .damage = fullDamage,
+                },
+                fullDamage);
+        }
     }
 
     backdropBlurDirty = false;
