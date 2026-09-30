@@ -204,6 +204,7 @@ class CScrollOverview : public IOverview {
     Vector2D                         lastMousePosLocal = Vector2D{}; // monitor-local pixel space
 
     PHLWINDOWREF                     closeOnWindow;
+    PHLWINDOWREF                     followMouseHoveredWindow;
     PHLWINDOWREF                     dragActiveWindow;
     PHLWORKSPACEREF                  dragOriginalWorkspace;
     std::vector<WP<IOverview>>                    dragTransientOverviews;
@@ -301,6 +302,7 @@ class CScrollOverview : public IOverview {
     wl_event_source*                 closeRemovalIdle = nullptr;
 
     bool                             closing = false;
+    bool                             mainButtonResizesWindow = false;
     bool                             closeApplied = false; // close() has run its teardown; guards against double-invocation
     bool                                               closeRemovalPending = false;
 

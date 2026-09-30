@@ -14,6 +14,7 @@
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/render/Renderer.hpp>
+#include <hyprland/src/pointer/PointerManager.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
 #include <hyprland/src/managers/input/trackpad/GestureTypes.hpp>
 #include <hyprutils/utils/ScopeGuard.hpp>
@@ -119,6 +120,9 @@ static void onRenderStage(eRenderStage stage) {
     g_pScrollOverview               = OVERVIEW;
     g_pHyprRenderer->m_renderPass.clear();
     OVERVIEW->render();
+    // The software cursor was queued with the regular workspace we just dropped; draw it again on top.
+    if (g_pHyprRenderer->shouldRenderCursor())
+        Pointer::mgr()->renderSoftwareCursorsFor(MONITOR, Time::steadyNow(), g_pHyprRenderer->m_renderData.damage);
     OverviewRender::flushPass(MONITOR);
     g_pScrollOverview        = PREVOVERVIEW;
     renderingOverviewMonitor = PREVRENDERINGMONITOR;

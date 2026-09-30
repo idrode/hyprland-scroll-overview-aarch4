@@ -418,8 +418,11 @@ static void defineConfigValues() {
                                    SIntValueOptions{.min = 0, .max = 1}));
     addValue(makeShared<CIntValue>("plugin:scrolloverview:input:drag_threshold", "overview drag threshold", 10,
                                    SIntValueOptions{.min = 0}));
+    addValue(makeShared<CBoolValue>("plugin:scrolloverview:input:follow_mouse", "select the window under the cursor while moving the mouse in the overview", false));
     addValue(makeShared<CIntValue>("plugin:scrolloverview:wallpaper", "wallpaper mode", 0, SIntValueOptions{.min = 0, .max = 2}));
     addValue(makeShared<CBoolValue>("plugin:scrolloverview:blur", "blur the overview wallpaper", false));
+    addValue(makeShared<CFloatValue>("plugin:scrolloverview:drop_indicator_alpha", "opacity of the drop target highlight while dragging (0 hides it)", 0.3F,
+                                       SFloatValueOptions{.min = 0.F, .max = 1.F}));
     addValue(makeShared<CIntValue>("plugin:scrolloverview:blur_passes", "times the overview wallpaper blur is applied", 1, SIntValueOptions{.min = 1, .max = 10}));
     addValue(makeShared<CBoolValue>("plugin:scrolloverview:shadow:enabled", "draw a shadow around each workspace card", false));
     addValue(makeShared<CIntValue>("plugin:scrolloverview:shadow:range", "workspace card shadow range", -1));
@@ -482,6 +485,10 @@ int getDragThreshold(PHLMONITOR monitor) {
     return std::max<int>(0, getValue<int>("plugin:scrolloverview:input:drag_threshold", monitor));
 }
 
+bool getFollowMouse(PHLMONITOR monitor) {
+    return getValue<bool>("plugin:scrolloverview:input:follow_mouse", monitor);
+}
+
 float getTouchpadScrollFactor(PHLMONITOR monitor) {
     static constexpr float OVERVIEWTOUCHPADSCROLLFACTOR = 1.5F;
 
@@ -519,6 +526,10 @@ int getWallpaperMode(PHLMONITOR monitor) {
 
 bool getBlur(PHLMONITOR monitor) {
     return getValue<bool>("plugin:scrolloverview:blur", monitor);
+}
+
+float getDropIndicatorAlpha(PHLMONITOR monitor) {
+    return std::clamp<float>(getValue<float>("plugin:scrolloverview:drop_indicator_alpha", monitor), 0.F, 1.F);
 }
 
 int getBlurPasses(PHLMONITOR monitor) {

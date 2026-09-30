@@ -15,14 +15,12 @@
 namespace {
 
 static constexpr float INDICATOR_BASE_SIZE_PX = 200.F;
-static constexpr float INDICATOR_ALPHA   = 0.3F;
-
-static CHyprColor indicatorColor() {
+static CHyprColor indicatorColor(float alpha) {
     auto* const ACTIVEBORDER = sc<Config::CGradientValueData*>(ScrollOverview::Config::valueRef<Config::IComplexConfigValue>("general:col.active_border").ptr());
     if (!ACTIVEBORDER || ACTIVEBORDER->m_colors.empty())
-        return Colors::WHITE.modifyA(INDICATOR_ALPHA);
+        return Colors::WHITE.modifyA(alpha);
 
-    return ACTIVEBORDER->m_colors[0].modifyA(INDICATOR_ALPHA);
+    return ACTIVEBORDER->m_colors[0].modifyA(alpha);
 }
 
 static bool isHorizontalSide(const std::string& side) {
@@ -122,6 +120,10 @@ void CDropIndicator::renderDropIndicator(const SRenderParams& params) {
     if (!params.monitor || !params.workspace)
         return;
 
+    const float ALPHA = ScrollOverview::Config::getDropIndicatorAlpha(params.monitor);
+    if (ALPHA <= 0.F)
+        return;
+
     if (!params.anchor.window && params.floating && params.workspaceFullyVisible)
         return;
 
@@ -134,7 +136,7 @@ void CDropIndicator::renderDropIndicator(const SRenderParams& params) {
 
     CRectPassElement::SRectData data;
     data.box           = BOX;
-    data.color         = indicatorColor();
+    data.color         = indicatorColor(ALPHA);
     data.round         = indicatorRounding(params);
     data.roundingPower = indicatorRoundingPower(params);
 

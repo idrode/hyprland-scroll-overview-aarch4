@@ -1157,6 +1157,21 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
         if (scrollingPanPointerDown)
             updateScrollingPan();
 
+        if (ScrollOverview::Config::getFollowMouse(pMonitor.lock()) && !submapMouseClickPending && !dragPendingPrimary && !dragActiveWindow && !resizePointerDown &&
+            !resizeActiveWindow && !scrollingPanPointerDown) {
+            size_t     workspaceIdx = viewportCurrentWorkspace;
+            const auto WINDOW       = windowAtOverviewPoint(lastMousePosLocal, &workspaceIdx);
+
+            // Only react when the hovered window changes, so a resting cursor never overrides keyboard navigation.
+            if (WINDOW && WINDOW != followMouseHoveredWindow.lock()) {
+                // Focusing a window on another workspace would switch workspaces and scroll the view under the cursor, so those are only highlighted.
+                const bool SAMEWORKSPACE = pMonitor && WINDOW->m_workspace == pMonitor->m_activeWorkspace;
+                selectOverviewWindow(WINDOW, workspaceIdx, SAMEWORKSPACE);
+            }
+
+            followMouseHoveredWindow = WINDOW;
+        }
+
         //  highlightHoverDebug();
     };
 
@@ -1331,6 +1346,20 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
             const auto WINDOW = windowAtOverviewPoint(point);
             return WINDOW ? WINDOW->m_workspace : PHLWORKSPACE{};
         };
+
+        // SUPER + SHIFT + main button resizes, matching the usual Hyprland mouse bind outside the overview.
+        if (event.button == MAIN_BUTTON) {
+            if (event.state == WL_POINTER_BUTTON_STATE_PRESSED) {
+                const auto MODS         = g_pInputManager->getModsFromAllKBs();
+                mainButtonResizesWindow = (MODS & HL_MODIFIER_META) && (MODS & HL_MODIFIER_SHIFT);
+            }
+
+            if (mainButtonResizesWindow) {
+                event.button = RESIZE_BUTTON;
+                if (event.state == WL_POINTER_BUTTON_STATE_RELEASED)
+                    mainButtonResizesWindow = false;
+            }
+        }
 
         if (event.button == MAIN_BUTTON) {
             lastMousePosLocal = getOverviewMousePosLocal(pMonitor.lock());
