@@ -8,10 +8,10 @@ https://github.com/user-attachments/assets/e5eb1ad2-79bc-492a-82cd-02cd8b960d3e
 
 ## What's different in this fork
 
-- Builds and runs on aarch64 (Asahi Linux / Apple Silicon).
-- <!-- TODO: list your concrete changes vs. upstream, e.g. build fixes, compatibility patches -->
+- Removes the dependency on Hyprland function hooks, so the plugin works on aarch64 (tested on Asahi Linux with Arch Linux ARM, Apple Silicon).
+- The same changes are available on both the `main` and `new-release` branches.
 
-If you are on x86_64, you most likely want the [upstream repository](https://github.com/yayuuu/hyprland-scroll-overview) instead.
+If you are on x86_64, the [upstream repository](https://github.com/yayuuu/hyprland-scroll-overview) is the reference version.
 
 ## Installation
 
@@ -21,9 +21,9 @@ If you are on x86_64, you most likely want the [upstream repository](https://git
    ```bash
    hyprpm add https://github.com/idrode/hyprland-scroll-overview-aarch4
    ```
-   If you use a Git build of Hyprland, the upstream project provides a `new-release` branch for it:
+   If you use a Git build of Hyprland, add the plugin from the `new-release` branch instead:
    ```bash
-   hyprpm add https://github.com/yayuuu/hyprland-scroll-overview origin/new-release
+   hyprpm add https://github.com/idrode/hyprland-scroll-overview-aarch4 origin/new-release
    ```
 2. Build and fetch dependencies:
    ```bash
