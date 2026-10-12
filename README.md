@@ -1,8 +1,17 @@
-# ScrollOverview
+# ScrollOverview (aarch64 fork)
 
-ScrollOverview is an overview plugin like niri.
+ScrollOverview is an overview plugin for [Hyprland](https://hypr.land), inspired by niri.
+
+> **This is a fork** of [yayuuu/hyprland-scroll-overview](https://github.com/yayuuu/hyprland-scroll-overview), which is based on the scroll-overview branch of hyprexpo. All credit for the plugin goes to the original author. This fork is maintained for **aarch64** (tested on Asahi Linux, Apple Silicon).
 
 https://github.com/user-attachments/assets/e5eb1ad2-79bc-492a-82cd-02cd8b960d3e
+
+## What's different in this fork
+
+- Builds and runs on aarch64 (Asahi Linux / Apple Silicon).
+- <!-- TODO: list your concrete changes vs. upstream, e.g. build fixes, compatibility patches -->
+
+If you are on x86_64, you most likely want the [upstream repository](https://github.com/yayuuu/hyprland-scroll-overview) instead.
 
 ## Installation
 
@@ -10,9 +19,9 @@ https://github.com/user-attachments/assets/e5eb1ad2-79bc-492a-82cd-02cd8b960d3e
 
 1. Add the plugin repository:
    ```bash
-   hyprpm add https://github.com/yayuuu/hyprland-scroll-overview.git
+   hyprpm add https://github.com/idrode/hyprland-scroll-overview-aarch4
    ```
-   If you use a Git build of Hyprland, add the plugin from the `new-release` branch instead:
+   If you use a Git build of Hyprland, the upstream project provides a `new-release` branch for it:
    ```bash
    hyprpm add https://github.com/yayuuu/hyprland-scroll-overview origin/new-release
    ```
@@ -24,9 +33,9 @@ https://github.com/user-attachments/assets/e5eb1ad2-79bc-492a-82cd-02cd8b960d3e
    ```bash
    hyprpm enable scrolloverview
    ```
-4. Configure and Enjoy.
+4. Configure and enjoy.
 
-For more installation methods, including building from source and loading the plugin automatically, see the [Installation guide](https://github.com/yayuuu/hyprland-scroll-overview/wiki/Installation).
+For more installation methods, including building from source and loading the plugin automatically, see the [upstream Installation guide](https://github.com/yayuuu/hyprland-scroll-overview/wiki/Installation).
 
 ## Configuration
 
@@ -88,21 +97,12 @@ This setting does not affect overview-origin drags with `toggle all` because eve
 
 ## Documentation
 
-The complete documentation is available in the [ScrollOverview wiki](https://github.com/yayuuu/hyprland-scroll-overview/wiki). It covers all configuration options, keybinds, submaps, gestures, dispatchers, and advanced Lua examples.
+The complete documentation is in the [upstream ScrollOverview wiki](https://github.com/yayuuu/hyprland-scroll-overview/wiki). It covers all configuration options, keybinds, submaps, gestures, dispatchers, and advanced Lua examples.
 
 ## Supported plugins
 
 - `hyprbars`
 
-<br>
-<br>
+## Credits and license
 
-## Star History
-
-<a href="https://www.star-history.com/?repos=yayuuu%2Fhyprland-scroll-overview&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=yayuuu/hyprland-scroll-overview&type=date&theme=dark&legend=top-left&sealed_token=dnoTQqdWontVtW1U-Qv5yJAQVYpafoKJ0ytKAwVNsCxYO8lor7ZbsD4oVIRHBW_9LjjRPMV-wHAXTw70cn4SbI_2OIrdFEMbOyjv9GVHi9EOBFIgwzKwvMTGWBhkYg5q1f9oV6mQqQZFgec__fA790Nj_OS5WOyVjeHFwceIJRFBlgSvBWyGMn3WUqym" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=yayuuu/hyprland-scroll-overview&type=date&legend=top-left&sealed_token=dnoTQqdWontVtW1U-Qv5yJAQVYpafoKJ0ytKAwVNsCxYO8lor7ZbsD4oVIRHBW_9LjjRPMV-wHAXTw70cn4SbI_2OIrdFEMbOyjv9GVHi9EOBFIgwzKwvMTGWBhkYg5q1f9oV6mQqQZFgec__fA790Nj_OS5WOyVjeHFwceIJRFBlgSvBWyGMn3WUqym" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=yayuuu/hyprland-scroll-overview&type=date&legend=top-left&sealed_token=dnoTQqdWontVtW1U-Qv5yJAQVYpafoKJ0ytKAwVNsCxYO8lor7ZbsD4oVIRHBW_9LjjRPMV-wHAXTw70cn4SbI_2OIrdFEMbOyjv9GVHi9EOBFIgwzKwvMTGWBhkYg5q1f9oV6mQqQZFgec__fA790Nj_OS5WOyVjeHFwceIJRFBlgSvBWyGMn3WUqym" />
- </picture>
-</a>
+Original plugin by [yayuuu](https://github.com/yayuuu/hyprland-scroll-overview). This fork keeps the original license; see [LICENSE](LICENSE).
